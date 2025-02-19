@@ -49,6 +49,8 @@ INSTALLED_APPS = [
     'users',
     'expenses',
     'corsheaders',
+    'group',
+    'drf_yasg',
 ]
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (

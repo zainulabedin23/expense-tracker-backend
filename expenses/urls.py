@@ -1,6 +1,11 @@
-from django.urls import path
-from .views import ExpenseListCreateView, ExpenseDetailView
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import ExpenseViewSet, ExpenseSplitViewSet
+
+router = DefaultRouter()
+router.register(r'expenses', ExpenseViewSet)
+router.register(r'expense-splits', ExpenseSplitViewSet)
+
 urlpatterns = [
-    path('expenses/', ExpenseListCreateView.as_view(), name='expense-list-create'),
-    path('expenses/<uuid:pk>/', ExpenseDetailView.as_view(), name='expense-detail'),
+    path('expense/', include(router.urls)),
 ]

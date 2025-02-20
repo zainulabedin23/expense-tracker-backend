@@ -279,6 +279,7 @@ def category_expense_daily_api(request):
     )
     return JsonResponse({"daily_category_expenses": list(expenses)})
 
+
 # 1️⃣ Category-wise Expense (Monthly)
 def category_expense_monthly_api(request):
     user_id = request.GET.get('user_id')  # Get the user_id from query params

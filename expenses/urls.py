@@ -21,16 +21,5 @@ urlpatterns = [
     path("user-expenses/category/daily/", category_expense_daily_api, name="category_expense_daily_api"),
     path("user-expenses/category/monthly/", category_expense_monthly_api, name="category_expense_monthly_api"),
     path("user-expenses/category/yearly/", category_expense_yearly_api, name="category_expense_yearly_api"),
-    
-
-
-
-
-
-
-
-
-
-    
     path('simplify-debts/<uuid:group_id>/', SimplifyDebtView.as_view(), name='simplify-debts'),
 ]

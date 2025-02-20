@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from group.models import Group
+
 #class ExpenseViewSet(viewsets.ModelViewSet):
 #    queryset = Expense.objects.all()
 #    serializer_class = ExpenseSerializer
@@ -110,12 +111,19 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
-class PendingExpensesView(APIView):
-    permission_classes = [IsAuthenticated]  # Require authentication
+from datetime import timedelta
+from django.utils import timezone
+from django.shortcuts import get_object_or_404
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.views import APIView
+from .models import ExpenseSplit, Expense
 
+class PendingExpensesView(APIView):
     def get(self, request, user_id=None):
         """
         Get all pending ExpenseSplits created in the last 1 day for a specific user.
+        Includes owner name and group name (if applicable).
         """
         one_day_ago = timezone.now() - timedelta(days=1)
 
@@ -125,19 +133,35 @@ class PendingExpensesView(APIView):
         # Filter pending expenses for the user
         pending_expenses = ExpenseSplit.objects.filter(
             user=user, status='pending', created_at__gte=one_day_ago
-        )
+        ).select_related('expense', 'expense__owner', 'expense__group')  # Optimized DB queries
 
         # Serialize data
         pending_expenses_data = [
             {
                 'expense_id': expense.expense.id,
                 'user_id': expense.user.id,
+                'user_name': expense.user.name,  # Fetch user name
                 'amount': expense.amount,
                 'status': expense.status,
                 'created_at': expense.created_at,
+                'owner_name': expense.expense.owner.name,  # Fetch owner name from Expense table
+                'group_id': expense.expense.group.id if expense.expense.group else None,  # Fetch group ID if exists
+                'group_name': expense.expense.group.name if expense.expense.group else None,  # Fetch group name if exists
             }
             for expense in pending_expenses
         ]
 
         return Response(pending_expenses_data, status=status.HTTP_200_OK)
 
+
+class UserExpensesViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request, user_id=None):
+        """
+        Get all expenses created by a specific user (owner).
+        """
+        user = get_object_or_404(User, id=user_id)
+        expenses = Expense.objects.filter(owner=user)
+        serializer = ExpenseSerializer(expenses, many=True)
+        return Response(serializer.data)

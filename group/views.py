@@ -1,47 +1,48 @@
-from rest_framework import generics, permissions
+from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework import status
+from django_filters.rest_framework import DjangoFilterBackend
 from .models import Group, GroupMember
-from .serializers import GroupSerializer, GroupMemberSerializer
+from .serializers import GroupSerializer, GroupMemberSerializer, GroupCreateSerializer
+from .filters import GroupFilter, GroupMemberFilter
+from .permissions import IsGroupOwnerOrReadOnly
 
-# ✅ List all groups or create a new group
-class GroupListCreateView(generics.ListCreateAPIView):
+class GroupViewSet(viewsets.ModelViewSet):
     queryset = Group.objects.all()
-    serializer_class = GroupSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = GroupFilter
+    permission_classes = [IsGroupOwnerOrReadOnly]
 
-    def perform_create(self, serializer):
+    def get_serializer_class(self):
+        """Use a different serializer for group creation with members."""
+        if self.action == 'create':
+            return GroupCreateSerializer
+        return GroupSerializer
+    @action(detail=False, methods=['get'], url_path='user/(?P<user_id>[^/.]+)')
+    def get_user_groups(self, request, user_id=None):
         """
-        When a user creates a group:
-        1. Assign them as the 'created_by' user.
-        2. Automatically add them to 'GroupMember' table.
+        Fetch all groups where a user is a member, along with all group members.
         """
-        group = serializer.save(created_by=self.request.user)  # Step 1: Save the group
-        
-        # Step 2: Add the creator to the GroupMember table
-        GroupMember.objects.create(group=group, user=self.request.user)
+        # 🔹 Use 'members' instead of 'group_members'
+        user_groups = Group.objects.filter(members__user_id=user_id).distinct()
 
-# ✅ Retrieve, Update, or Delete a single group
-class GroupDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Group.objects.all()
-    serializer_class = GroupSerializer
-    permission_classes = [permissions.IsAuthenticated]
+        response_data = []
+        for group in user_groups:
+            members = GroupMember.objects.filter(group=group).select_related('user')
+            member_list = [{"user_id": member.user.id, "username": member.user.username} for member in members]
 
-# ✅ List or Add Members to a Group
-class GroupMemberListCreateView(generics.ListCreateAPIView):
+            response_data.append({
+                "group_id": group.id,
+                "group_name": group.name,
+                "members": member_list
+            })
+
+        return Response(response_data)
+
+class GroupMemberViewSet(viewsets.ModelViewSet):
     queryset = GroupMember.objects.all()
     serializer_class = GroupMemberSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-# ✅ Retrieve, Update, or Remove a Group Member
-class GroupMemberDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = GroupMember.objects.all()
-    serializer_class = GroupMemberSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-class UserGroupView(generics.ListAPIView):
-    serializer_class = GroupSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        """Return all groups where the given UUID user ID is a member."""
-        user_id = self.kwargs.get("user_id")  # Extract UUID user ID from the URL
-        return Group.objects.filter(members__user_id=user_id)
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = GroupMemberFilter
+    permission_classes = [IsGroupOwnerOrReadOnly]

@@ -4,6 +4,10 @@ from .serializers import ExpenseSerializer, ExpenseSplitSerializer
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+from group.models import Group
 #class ExpenseViewSet(viewsets.ModelViewSet):
 #    queryset = Expense.objects.all()
 #    serializer_class = ExpenseSerializer
@@ -47,7 +51,47 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                     )
                 except User.DoesNotExist:
                     raise serializers.ValidationError(f"User with ID {user_id} does not exist.")
+                
+    @action(detail=False, methods=['get'], url_path='group-expenses/(?P<group_id>[^/.]+)')
+    def get_group_expenses(self, request, group_id=None):
+        """
+        Get all expenses for a given group along with split details.
+        """
+        # 1️⃣ Validate if the group exists
+        group = get_object_or_404(Group, id=group_id)
 
+        # 2️⃣ Fetch all expenses related to this group
+        expenses = Expense.objects.filter(group=group.id)
+
+        # 3️⃣ Fetch split expense details
+        response_data = {
+            "group_id": group.id,
+            "expenses": []
+        }
+
+        for expense in expenses:
+            splits = ExpenseSplit.objects.filter(expense_id=expense.id).select_related("user")
+
+            split_details = [
+                {
+                    "user_id": split.user.id,
+                    "username": split.user.username,  # Fetch username from User model
+                    "amount": split.amount,
+                    "status": split.status
+                }
+                for split in splits
+            ]
+
+            response_data["expenses"].append({
+                "expense_id": expense.id,
+                "amount": expense.amount,
+                "category": expense.category,
+                "description": expense.description,
+                "payment_date": expense.payment_date,
+                "splits": split_details
+            })
+
+        return Response(response_data)
 
 class ExpenseSplitViewSet(viewsets.ModelViewSet):
     queryset = ExpenseSplit.objects.all()

@@ -16,12 +16,11 @@ class Group(models.Model):
 class GroupMember(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="members")
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="group_memberships")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="user_groups")
     joined_at = models.DateTimeField(auto_now_add=True)
 
-
     class Meta:
-        unique_together = ('group', 'user')  # Prevent duplicate entries
+        unique_together = ('group', 'user')  # Prevent duplicate group members
 
     def __str__(self):
         return f"{self.user.username} in {self.group.name}"

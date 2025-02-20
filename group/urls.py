@@ -1,13 +1,11 @@
-from django.urls import path
-from .views import (
-    GroupListCreateView, GroupDetailView,
-    GroupMemberListCreateView, GroupMemberDetailView,UserGroupView
-)
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import GroupViewSet, GroupMemberViewSet
+
+router = DefaultRouter()
+router.register(r'groups', GroupViewSet)
+router.register(r'group-members', GroupMemberViewSet)
 
 urlpatterns = [
-    path('groups/', GroupListCreateView.as_view(), name='group-list-create'),  # ✅ List all groups or create a new group
-    path('groups/<uuid:pk>/', GroupDetailView.as_view(), name='group-detail'),  # ✅ Retrieve, Update, or Delete a single group
-    path('group-members/', GroupMemberListCreateView.as_view(), name='group-member-list-create'),  # ✅ List or Add Members to a Group
-    path('group-members/<uuid:pk>/', GroupMemberDetailView.as_view(), name='group-member-detail'),  # ✅ Retrieve, Update, or Remove a Group Member
-    path('user-groups/<uuid:user_id>/',UserGroupView.as_view(),name='user-groups')  # ✅ List all groups where the current user is a member
+    path('', include(router.urls)),
 ]

@@ -124,7 +124,15 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
+from datetime import timedelta
+ 
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=2),  # Increase token validity to 2 hours
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),  # Refresh token valid for 7 days
+    "ROTATE_REFRESH_TOKENS": True,  # Issue a new refresh token with each login
+    "BLACKLIST_AFTER_ROTATION": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 

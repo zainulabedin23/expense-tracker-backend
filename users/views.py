@@ -27,3 +27,19 @@ class UserDetailView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+class RetrieveUserByEmailView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]  # No authentication required
+    def get(self, request):
+        email = request.query_params.get("email")  # Get email from request query params
+
+        if not email:
+            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email=email)  # Fetch user by email
+            return Response({
+                "user_id": user.id,
+                "username": user.username
+            }, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)

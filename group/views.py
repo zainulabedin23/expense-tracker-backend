@@ -7,11 +7,13 @@ from .models import Group, GroupMember
 from .serializers import GroupSerializer, GroupMemberSerializer, GroupCreateSerializer
 from .filters import GroupFilter, GroupMemberFilter
 from .permissions import IsGroupOwnerOrReadOnly
+# from rest_framework.permissions import IsAuthenticated
 
 class GroupViewSet(viewsets.ModelViewSet):
     queryset = Group.objects.all()
     filter_backends = [DjangoFilterBackend]
     filterset_class = GroupFilter
+    # is authenticated is not there in permissions
     permission_classes = [IsGroupOwnerOrReadOnly]
 
     def get_serializer_class(self):

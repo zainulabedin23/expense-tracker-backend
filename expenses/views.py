@@ -60,7 +60,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         """
         Get all expenses for a given group along with split details.
         """
-        print(f"🔍 Received group_id: {group_id}")  # Debugging
+        # print(f"🔍 Received group_id: {group_id}")  # Debugging
 
        
         try:
@@ -177,6 +177,88 @@ class UserExpensesViewSet(viewsets.ViewSet):
         expenses = Expense.objects.filter(owner=user)
         serializer = ExpenseSerializer(expenses, many=True)
         return Response(serializer.data)
+    
+from collections import defaultdict
+# import networkx as nx
+
+
+
+
+
+
+class SimplifyDebtView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request, group_id):
+        # Validate group_id
+        try:
+            group_uuid = uuid.UUID(str(group_id))
+        except ValueError:
+            return Response({"error": "Invalid group_id format. Must be a UUID."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Fetch the group
+        group = get_object_or_404(Group, id=group_uuid)
+
+        # Fetch expenses related to the group
+        expenses = Expense.objects.filter(group_id=group_uuid)
+
+        # Step 1: Collect transactions (lender -> borrower -> amount)
+        transactions = []
+
+        for expense in expenses:
+            lender_id = str(expense.owner.id)  # The owner is the lender
+            splits = ExpenseSplit.objects.filter(expense=expense).select_related("user")
+
+            for split in splits:
+                if split.status.lower()=='paid':
+                    continue
+                borrower_id = str(split.user.id)  # The user in split is the borrower
+                amount = float(split.amount)  # The amount borrowed
+
+                if lender_id != borrower_id:  # Ignore if lender is paying themselves
+                    transactions.append((borrower_id, lender_id, amount))
+        # print(transactions)
+        # Step 2: Simplify the transactions
+        simplified_transactions = self.simplify_debts(transactions)
+
+        return Response({"group_id": group_id, "simplified_debts": simplified_transactions})
+
+ 
+   
+    
+    def simplify_debts(self, transactions):
+        balance = defaultdict(float)
+
+        # Calculate net balance for each user
+        for borrower, lender, amount in transactions:
+            balance[borrower] -= amount
+            balance[lender] += amount
+
+        # Separate creditors (positive balance) and debtors (negative balance)
+        creditors = sorted([(user, amount) for user, amount in balance.items() if amount > 0], key=lambda x: x[1])
+        debtors = sorted([(user, -amount) for user, amount in balance.items() if amount < 0], key=lambda x: x[1])
+
+        # Step 3: Match debtors to creditors
+        simplified_transactions = []
+        i, j = 0, 0
+
+        while i < len(debtors) and j < len(creditors):
+            debtor, debt_amount = debtors[i]
+            creditor, credit_amount = creditors[j]
+
+            amount = min(debt_amount, credit_amount)
+            simplified_transactions.append({"debtor": debtor, "creditor": creditor, "amount": amount})
+
+            # Update remaining balances
+            debtors[i] = (debtor, debt_amount - amount)
+            creditors[j] = (creditor, credit_amount - amount)
+
+            if debtors[i][1] == 0:
+                i += 1
+            if creditors[j][1] == 0:
+                j += 1
+
+        return simplified_transactions
+
 
 from django.http import JsonResponse
 from django.db.models import Sum
@@ -196,6 +278,7 @@ def category_expense_daily_api(request):
         .order_by("date")
     )
     return JsonResponse({"daily_category_expenses": list(expenses)})
+
 
 # 1️⃣ Category-wise Expense (Monthly)
 def category_expense_monthly_api(request):

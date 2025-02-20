@@ -13,3 +13,4 @@ class ExpenseSplitSerializer(serializers.ModelSerializer):
         fields = ['id', 'expense', 'user', 'amount', 'status']
 
 
+ 

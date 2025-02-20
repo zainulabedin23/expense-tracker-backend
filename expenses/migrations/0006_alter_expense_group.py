@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("expenses", "0005_expensesplit_created_at"),
         ("group", "0002_alter_groupmember_user"),
-
+    ]
 
     operations = [
         migrations.AlterField(

@@ -1,3 +1,4 @@
+import uuid
 from rest_framework import viewsets
 from .models import Expense, ExpenseSplit
 from .serializers import ExpenseSerializer, ExpenseSplitSerializer
@@ -43,7 +44,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 amount = split.get("amount")
                 status = split.get("status", "pending")
  
-                # ✅ Fetch the actual User instance
+                
                 try:
                     user_instance = User.objects.get(id=user_id)
                     ExpenseSplit.objects.create(
@@ -57,25 +58,35 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         """
         Get all expenses for a given group along with split details.
         """
-        # 1️⃣ Validate if the group exists
-        group = get_object_or_404(Group, id=group_id)
+        print(f"🔍 Received group_id: {group_id}")  # Debugging
 
-        # 2️⃣ Fetch all expenses related to this group
-        expenses = Expense.objects.filter(group=group.id)
+       
+        try:
+            group_uuid = uuid.UUID(group_id)
+        except ValueError:
+            return Response({"error": "Invalid group_id format. Must be a UUID."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 3️⃣ Fetch split expense details
+       
+        group = get_object_or_404(Group, id=group_uuid)
+        
+
+       
+        expenses = Expense.objects.filter(group_id=group_uuid)
+        
+
+        
         response_data = {
-            "group_id": group.id,
+            "group_id": str(group.id),
             "expenses": []
         }
 
         for expense in expenses:
-            splits = ExpenseSplit.objects.filter(expense_id=expense.id).select_related("user")
+            splits = ExpenseSplit.objects.filter(expense=expense).select_related("user")
 
             split_details = [
                 {
-                    "user_id": split.user.id,
-                    "username": split.user.username,  # Fetch username from User model
+                    "user_id": str(split.user.id),
+                    "username": split.user.username,
                     "amount": split.amount,
                     "status": split.status
                 }
@@ -83,8 +94,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             ]
 
             response_data["expenses"].append({
-                "expense_id": expense.id,
-                "amount": expense.amount,
+                "expense_id": str(expense.id),
+                "amount": float(expense.amount),
                 "category": expense.category,
                 "description": expense.description,
                 "payment_date": expense.payment_date,
@@ -92,7 +103,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             })
 
         return Response(response_data)
-#new changes
+    
 class ExpenseSplitViewSet(viewsets.ModelViewSet):
     queryset = ExpenseSplit.objects.all()
     serializer_class = ExpenseSplitSerializer

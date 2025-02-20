@@ -149,15 +149,16 @@ class PendingExpensesView(APIView):
         # Serialize data
         pending_expenses_data = [
             {
-                'expense_id': expense.expense.id,
-                'user_id': expense.user.id,
-                'user_name': expense.user.name,  # Fetch user name
+                #'expense_id': expense.expense.id,
+                #'user_id': expense.user.id,
+                "owner_name": expense.expense.owner.username,
+                "expense_description": expense.expense.description,  # Expense description
+                
                 'amount': expense.amount,
                 'status': expense.status,
-                'created_at': expense.created_at,
-                'owner_name': expense.expense.owner.name,  # Fetch owner name from Expense table
-                'group_id': expense.expense.group.id if expense.expense.group else None,  # Fetch group ID if exists
-                'group_name': expense.expense.group.name if expense.expense.group else None,  # Fetch group name if exists
+                #"user_name": expense.user.username,  # User's name
+                #"user_email": expense.user.email,  # User's email
+                "group_name": expense.expense.group.name if expense.expense.group else None,
             }
             for expense in pending_expenses
         ]

@@ -164,7 +164,6 @@ class PendingExpensesView(APIView):
 
         return Response(pending_expenses_data, status=status.HTTP_200_OK)
 
-
 class UserExpensesViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
@@ -179,6 +178,57 @@ class UserExpensesViewSet(viewsets.ViewSet):
     
 from collections import defaultdict
 # import networkx as nx
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class SimplifyDebtView(APIView):
     permission_classes = [IsAuthenticated]

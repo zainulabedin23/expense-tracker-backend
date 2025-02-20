@@ -11,5 +11,15 @@ urlpatterns = [
     path('expense/', include(router.urls)),
     path('pending-expenses/<uuid:user_id>/', PendingExpensesView.as_view(), name='pending-expenses'),
     path('user-expenses/<uuid:user_id>/', UserExpensesViewSet.as_view({'get': 'list'}), name='user-expenses'),
+
+
+
+
+
+
+
+
+
+    
     path('simplify-debts/<uuid:group_id>/', SimplifyDebtView.as_view(), name='simplify-debts'),
 ]

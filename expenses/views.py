@@ -92,7 +92,52 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             })
 
         return Response(response_data)
-
+#new changes
 class ExpenseSplitViewSet(viewsets.ModelViewSet):
     queryset = ExpenseSplit.objects.all()
     serializer_class = ExpenseSplitSerializer
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.utils import timezone
+from datetime import timedelta
+from .models import ExpenseSplit
+from rest_framework import status
+from django.shortcuts import get_object_or_404
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+class PendingExpensesView(APIView):
+    permission_classes = [IsAuthenticated]  # Require authentication
+
+    def get(self, request, user_id=None):
+        """
+        Get all pending ExpenseSplits created in the last 1 day for a specific user.
+        """
+        one_day_ago = timezone.now() - timedelta(days=1)
+
+        # Validate user ID
+        user = get_object_or_404(User, id=user_id)
+
+        # Filter pending expenses for the user
+        pending_expenses = ExpenseSplit.objects.filter(
+            user=user, status='pending', created_at__gte=one_day_ago
+        )
+
+        # Serialize data
+        pending_expenses_data = [
+            {
+                'expense_id': expense.expense.id,
+                'user_id': expense.user.id,
+                'amount': expense.amount,
+                'status': expense.status,
+                'created_at': expense.created_at,
+            }
+            for expense in pending_expenses
+        ]
+
+        return Response(pending_expenses_data, status=status.HTTP_200_OK)
+

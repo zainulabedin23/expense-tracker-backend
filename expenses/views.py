@@ -8,7 +8,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from group.models import Group
+from group.models import Group, GroupMember
 
 #class ExpenseViewSet(viewsets.ModelViewSet):
 #    queryset = Expense.objects.all()
@@ -36,7 +36,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         - If the type is 'group', also create corresponding ExpenseSplit entries.
         """
         expense = serializer.save(owner=self.request.user)  # Save expense first
- 
+        expense.date = timezone.now()  # Set current date and time
+        expense.save()
         # If expense type is 'group', create ExpenseSplit records
         if expense.type == 'group':
             splits = self.request.data.get("splits", [])
@@ -52,7 +53,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                         expense=expense, user=user_instance, amount=amount, status=status
                     )
                 except User.DoesNotExist:
-                    raise serializers.ValidationError(f"User with ID {user_id} does not exist.")
+                    raise serializer.ValidationError(f"User with ID {user_id} does not exist.")
                 
     @action(detail=False, methods=['get'], url_path='group-expenses/(?P<group_id>[^/.]+)')
     def get_group_expenses(self, request, group_id=None):
@@ -149,15 +150,16 @@ class PendingExpensesView(APIView):
         # Serialize data
         pending_expenses_data = [
             {
-                'expense_id': expense.expense.id,
-                'user_id': expense.user.id,
-                'user_name': expense.user.name,  # Fetch user name
+                #'expense_id': expense.expense.id,
+                #'user_id': expense.user.id,
+                "owner_name": expense.expense.owner.username,
+                "expense_description": expense.expense.description,  # Expense description
+                
                 'amount': expense.amount,
                 'status': expense.status,
-                'created_at': expense.created_at,
-                'owner_name': expense.expense.owner.name,  # Fetch owner name from Expense table
-                'group_id': expense.expense.group.id if expense.expense.group else None,  # Fetch group ID if exists
-                'group_name': expense.expense.group.name if expense.expense.group else None,  # Fetch group name if exists
+                #"user_name": expense.user.username,  # User's name
+                #"user_email": expense.user.email,  # User's email
+                "group_name": expense.expense.group.name if expense.expense.group else None,
             }
             for expense in pending_expenses
         ]
@@ -178,52 +180,6 @@ class UserExpensesViewSet(viewsets.ViewSet):
     
 from collections import defaultdict
 # import networkx as nx
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -302,3 +258,55 @@ class SimplifyDebtView(APIView):
                 j += 1
 
         return simplified_transactions
+
+
+from django.http import JsonResponse
+from django.db.models import Sum
+from django.db.models.functions import TruncMonth, TruncDate, TruncYear
+
+# 1️⃣ Category-wise Expense (Daily)
+def category_expense_daily_api(request):
+    user_id = request.GET.get('user_id')  # Get the user_id from query params
+    if not user_id:
+        return JsonResponse({"error": "user_id is required"}, status=400)
+
+    expenses = (
+        Expense.objects.filter(owner=user_id)
+        .annotate(date=TruncDate("payment_date"))  # Grouping by daily payment_date
+        .values("date", "category")
+        .annotate(total_spent=Sum("amount"))
+        .order_by("date")
+    )
+    return JsonResponse({"daily_category_expenses": list(expenses)})
+
+# 1️⃣ Category-wise Expense (Monthly)
+def category_expense_monthly_api(request):
+    user_id = request.GET.get('user_id')  # Get the user_id from query params
+    if not user_id:
+        return JsonResponse({"error": "user_id is required"}, status=400)
+
+    expenses = (
+        Expense.objects.filter(owner=user_id)
+        .annotate(month=TruncMonth("payment_date"))  # Truncate to month
+        .values("month", "category")  # Only select month and category
+        .annotate(total_spent=Sum("amount"))
+        .order_by("month")
+    )
+    return JsonResponse({"monthly_category_expenses": list(expenses)})
+
+# 2️⃣ Category-wise Expense (Yearly)
+def category_expense_yearly_api(request):
+    user_id = request.GET.get('user_id')  # Get the user_id from query params
+    if not user_id:
+        return JsonResponse({"error": "user_id is required"}, status=400)
+
+    expenses = (
+        Expense.objects.filter(owner=user_id)
+        .annotate(year=TruncYear("payment_date"))  # Truncate to year
+        .values("year", "category")  # Only select year and category
+        .annotate(total_spent=Sum("amount"))
+        .order_by("year")
+    )
+    return JsonResponse({"yearly_category_expenses": list(expenses)})
+
+

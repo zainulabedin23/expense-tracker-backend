@@ -96,7 +96,9 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             ]
 
             response_data["expenses"].append({
+                
                 "expense_id": str(expense.id),
+                "owner":str(expense.owner.username),
                 "amount": float(expense.amount),
                 "category": expense.category,
                 "description": expense.description,

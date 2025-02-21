@@ -167,18 +167,31 @@ class PendingExpensesView(APIView):
         ]
 
         return Response(pending_expenses_data, status=status.HTTP_200_OK)
+from group.models import Group
+from .serializers import ExpenseSerializer
 
 class UserExpensesViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
     def list(self, request, user_id=None):
         """
-        Get all expenses created by a specific user (owner).
+        Get all expenses created by a specific user (owner) with group names instead of IDs.
         """
         user = get_object_or_404(User, id=user_id)
-        expenses = Expense.objects.filter(owner=user)
-        serializer = ExpenseSerializer(expenses, many=True)
-        return Response(serializer.data)
+        expenses = Expense.objects.filter(owner=user).select_related('group')
+
+        # Convert data to include group name
+        serialized_expenses = []
+        for expense in expenses:
+            expense_data = ExpenseSerializer(expense).data
+            # Fetch group name if group exists
+            expense_data['group_name'] = expense.group.name if expense.group else "No Group"
+            del expense_data['group']  # Remove group ID if not needed
+            serialized_expenses.append(expense_data)
+
+        return Response(serialized_expenses)
+
+
     
 from collections import defaultdict
 # import networkx as nx

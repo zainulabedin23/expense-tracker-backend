@@ -141,6 +141,7 @@ class PendingExpensesView(APIView):
         """
         one_day_ago = timezone.now() - timedelta(days=1)
 
+
         # Validate user ID
         user = get_object_or_404(User, id=user_id)
 

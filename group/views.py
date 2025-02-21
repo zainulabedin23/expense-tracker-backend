@@ -41,6 +41,7 @@ class GroupViewSet(viewsets.ModelViewSet):
                 "group_name": group.name,
                 "members": member_list
             })
+            
 
         return Response(response_data)
 

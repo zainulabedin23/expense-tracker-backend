@@ -136,32 +136,33 @@ from .models import ExpenseSplit, Expense
 class PendingExpensesView(APIView):
     def get(self, request, user_id=None):
         """
-        Get all pending ExpenseSplits created in the last 1 day for a specific user.
-        Includes owner name and group name (if applicable).
+        Get all pending ExpenseSplits for a specific user.
+        If `last_day=true` is passed in query params, it filters for the last 1 day only.
         """
-        one_day_ago = timezone.now() - timedelta(days=1)
+
 
 
         # Validate user ID
+        last_day = request.GET.get("last_day")  # Check if last_day=true is passed
         user = get_object_or_404(User, id=user_id)
 
-        # Filter pending expenses for the user
         pending_expenses = ExpenseSplit.objects.filter(
-            user=user, status='pending', created_at__gte=one_day_ago
-        ).select_related('expense', 'expense__owner', 'expense__group')  # Optimized DB queries
+            user=user, status="pending"
+        ).select_related("expense", "expense__owner", "expense__group")  # Optimized DB queries
 
-        # Serialize data
+
+        # If last_day=true is passed, filter for the last 1 day only
+        if last_day == "true":
+            one_day_ago = timezone.now() - timedelta(days=1)
+            pending_expenses = pending_expenses.filter(created_at__gte=one_day_ago)
+
         pending_expenses_data = [
             {
-                #'expense_id': expense.expense.id,
-                #'user_id': expense.user.id,
                 "owner_name": expense.expense.owner.username,
-                "expense_description": expense.expense.description,  # Expense description
-                
-                'amount': expense.amount,
-                'status': expense.status,
-                #"user_name": expense.user.username,  # User's name
-                #"user_email": expense.user.email,  # User's email
+                "split_expense_id": expense.id,
+                "expense_description": expense.expense.description,
+                "amount": expense.amount,
+                "status": expense.status,
                 "group_name": expense.expense.group.name if expense.expense.group else None,
             }
             for expense in pending_expenses
@@ -195,6 +196,7 @@ class UserExpensesViewSet(viewsets.ViewSet):
 
 
 
+    
     
 from collections import defaultdict
 # import networkx as nx
@@ -328,4 +330,53 @@ def category_expense_yearly_api(request):
     )
     return JsonResponse({"yearly_category_expenses": list(expenses)})
 
+class SettleSplitExpenseView(APIView):
+    def post(self, request):
+        """
+        Settles a split expense by updating its status to 'paid' 
+        and creating a new personal expense under 'Settlement' category.
+        """
+        split_expense_id = request.data.get("split_expense_id")  # Get split expense ID from request
+        if not split_expense_id:
+            return Response({"error": "split_expense_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Fetch the split expense
+        split_expense = get_object_or_404(ExpenseSplit, id=split_expense_id)
+
+        if split_expense.status == "paid":
+            return Response({"message": "This expense is already settled"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Mark split expense as paid
+        split_expense.status = "paid"
+        split_expense.save()
+
+        try:
+            # Create a new expense entry
+            new_expense = Expense.objects.create(
+                id=uuid.uuid4(),  # Generate a new unique ID
+                type="personal",  # This is a personal expense
+                owner=split_expense.user,  # The user who settled the split
+                amount=split_expense.amount,  
+                category="Settlement",  # Mark it as a settlement
+                description=f"Settlement for {split_expense.expense.description}",
+                group=split_expense.expense.group,  # Keep the same group if applicable
+                status="paid",  # Mark as paid since it's settled
+                is_paid_by_user=split_expense.user.id  # Track who paid
+            )
+
+
+           
+
+            return Response(
+                {
+                    "message": "Split expense settled successfully",
+                    "new_expense_id": new_expense.id,
+                    "new_expense_description": new_expense.description,
+                    "amount": new_expense.amount,
+                    "group_id": new_expense.group.id if new_expense.group else None
+                },
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            
+            return Response({"error": "Failed to create new expense"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

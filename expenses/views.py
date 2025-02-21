@@ -143,6 +143,10 @@ class PendingExpensesView(APIView):
         Get all pending ExpenseSplits for a specific user.
         If `last_day=true` is passed in query params, it filters for the last 1 day only.
         """
+
+
+
+        # Validate user ID
         last_day = request.GET.get("last_day")  # Check if last_day=true is passed
         user = get_object_or_404(User, id=user_id)
 
@@ -172,6 +176,7 @@ class PendingExpensesView(APIView):
         return Response(grouped_expenses, status=status.HTTP_200_OK)
 from group.models import Group
 from .serializers import ExpenseSerializer
+
 
 class UserExpensesViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]

@@ -170,6 +170,7 @@ class PendingExpensesView(APIView):
 from group.models import Group
 from .serializers import ExpenseSerializer
 
+
 class UserExpensesViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 

@@ -37,6 +37,10 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         """
         expense = serializer.save(owner=self.request.user)  # Save expense first
         expense.date = timezone.now()  # Set current date and time
+        if expense.type == 'personal':
+            expense.status = 'paid'  # Set the status of the main expense to 'paid'
+            
+
         expense.save()
         # If expense type is 'group', create ExpenseSplit records
         if expense.type == 'group':
@@ -152,19 +156,20 @@ class PendingExpensesView(APIView):
             one_day_ago = timezone.now() - timedelta(days=1)
             pending_expenses = pending_expenses.filter(created_at__gte=one_day_ago)
 
-        pending_expenses_data = [
-            {
-                "owner_name": expense.expense.owner.username,
+        # Dictionary to group expenses by group name
+        grouped_expenses = defaultdict(list)
+
+        for expense in pending_expenses:
+            group_name = expense.expense.group.name if expense.expense.group else "No Group"
+            grouped_expenses[group_name].append({
                 "split_expense_id": expense.id,
+                "owner_name": expense.expense.owner.username,
                 "expense_description": expense.expense.description,
                 "amount": expense.amount,
                 "status": expense.status,
-                "group_name": expense.expense.group.name if expense.expense.group else None,
-            }
-            for expense in pending_expenses
-        ]
+            })
 
-        return Response(pending_expenses_data, status=status.HTTP_200_OK)
+        return Response(grouped_expenses, status=status.HTTP_200_OK)
 from group.models import Group
 from .serializers import ExpenseSerializer
 

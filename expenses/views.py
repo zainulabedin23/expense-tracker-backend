@@ -144,6 +144,7 @@ class PendingExpensesView(APIView):
             user=user, status="pending"
         ).select_related("expense", "expense__owner", "expense__group")  # Optimized DB queries
 
+
         # If last_day=true is passed, filter for the last 1 day only
         if last_day == "true":
             one_day_ago = timezone.now() - timedelta(days=1)

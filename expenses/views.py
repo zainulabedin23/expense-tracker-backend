@@ -37,11 +37,14 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         """
         expense = serializer.save(owner=self.request.user)  # Save expense first
         expense.date = timezone.now()  # Set current date and time
+        self.update_user_totals(expense.owner)
+
         if expense.type == 'personal':
             expense.status = 'paid'  # Set the status of the main expense to 'paid'
             
 
         expense.save()
+        
         # If expense type is 'group', create ExpenseSplit records
         if expense.type == 'group':
             splits = self.request.data.get("splits", [])
@@ -56,9 +59,36 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                     ExpenseSplit.objects.create(
                         expense=expense, user=user_instance, amount=amount, status=status
                     )
+                    self.update_user_totals(user_instance)  # Update totals for each user in the split
                 except User.DoesNotExist:
                     raise serializer.ValidationError(f"User with ID {user_id} does not exist.")
-                
+                self.update_user_totals(user_instance)  # Update totals for each user in the spli
+    def perform_update(self, serializer):
+        """
+        Updates expense and recalculates totals for affected users.
+        """
+        expense = serializer.save()
+        self.update_user_totals(expense.owner)
+
+        # If expense is group, update all split users
+        if expense.type == 'group':
+            for split in expense.splits.all():
+                self.update_user_totals(split.user)
+
+    def update_user_totals(self, user):
+    
+        print(f"Updating totals for user {user.id}")
+        
+        total_expense = Expense.objects.filter(owner=user).aggregate(total=Sum("amount"))["total"] or 0
+        total_paid_expense = Expense.objects.filter(owner=user, status="paid").aggregate(total=Sum("amount"))["total"] or 0
+        total_pending_expense = Expense.objects.filter(owner=user, status="pending").aggregate(total=Sum("amount"))["total"] or 0
+        print(total_expense)
+        print(total_paid_expense)
+        user.total_expenses = total_expense
+        user.total_paid = total_paid_expense
+        user.total_pending= total_pending_expense
+        user.save()
+
     @action(detail=False, methods=['get'], url_path='group-expenses/(?P<group_id>[^/.]+)')
     def get_group_expenses(self, request, group_id=None):
         """

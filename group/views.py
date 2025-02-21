@@ -7,6 +7,7 @@ from .models import Group, GroupMember
 from .serializers import GroupSerializer, GroupMemberSerializer, GroupCreateSerializer
 from .filters import GroupFilter, GroupMemberFilter
 from .permissions import IsGroupOwnerOrReadOnly
+from rest_framework.permissions import IsAuthenticated
 # from rest_framework.permissions import IsAuthenticated
 
 class GroupViewSet(viewsets.ModelViewSet):
@@ -32,10 +33,11 @@ class GroupViewSet(viewsets.ModelViewSet):
         response_data = []
         for group in user_groups:
             members = GroupMember.objects.filter(group=group).select_related('user')
-            member_list = [{"user_id": member.user.id, "username": member.user.username} for member in members]
+            member_list = [{"user_id": member.user.id, "username": member.user.username,"group_member_id":member.id} for member in members]
 
             response_data.append({
                 "group_id": group.id,
+                "owner": group.created_by_id,
                 "group_name": group.name,
                 "members": member_list
             })

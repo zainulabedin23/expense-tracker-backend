@@ -41,7 +41,7 @@ class GroupViewSet(viewsets.ModelViewSet):
                 "group_name": group.name,
                 "members": member_list
             })
-            
+
 
         return Response(response_data)
 
@@ -51,3 +51,4 @@ class GroupMemberViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_class = GroupMemberFilter
     permission_classes = [IsGroupOwnerOrReadOnly]
+    

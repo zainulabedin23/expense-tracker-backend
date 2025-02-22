@@ -307,6 +307,7 @@ class SimplifyDebtView(APIView):
             print(debtor_user)
             # creditor_user = User.objects.get(creditor)
 
+
             creditor_user = get_object_or_404(User, id=creditor)
             simplified_transactions.append({"debtor":  str(debtor_user.username), "creditor": str(creditor_user.username), "amount": amount})
 

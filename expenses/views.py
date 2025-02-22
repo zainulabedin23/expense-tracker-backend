@@ -301,13 +301,14 @@ class SimplifyDebtView(APIView):
             creditor, credit_amount = creditors[j]
 
             amount = min(debt_amount, credit_amount)
-            # print(debtor)
+            print(debtor)
             
             debtor_user = get_object_or_404(User, id=debtor)
-            # print(debtor_user)
+            print(debtor_user)
             # creditor_user = User.objects.get(creditor)
+
             creditor_user = get_object_or_404(User, id=creditor)
-            simplified_transactions.append({"debtor":  str(debtor_user), "creditor": str(creditor_user), "amount": amount})
+            simplified_transactions.append({"debtor":  str(debtor_user.username), "creditor": str(creditor_user.username), "amount": amount})
 
             # Update remaining balances
             debtors[i] = (debtor, debt_amount - amount)

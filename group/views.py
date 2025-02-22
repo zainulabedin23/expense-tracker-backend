@@ -50,5 +50,5 @@ class GroupMemberViewSet(viewsets.ModelViewSet):
     serializer_class = GroupMemberSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_class = GroupMemberFilter
-    permission_classes = [IsGroupOwnerOrReadOnly]
+    permission_classes = [IsAuthenticated]
     

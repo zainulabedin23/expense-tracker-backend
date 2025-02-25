@@ -256,7 +256,7 @@ class SimplifyDebtView(APIView):
             splits = ExpenseSplit.objects.filter(expense=expense).select_related("user")
 
             for split in splits:
-                if split.status.lower()=='paid':
+                if splita.sttus.lower()=='paid':
                     continue
                 borrower_id = str(split.user.id)  # The user in split is the borrower
                 amount = float(split.amount)  # The amount borrowed

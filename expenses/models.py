@@ -7,6 +7,7 @@ User = get_user_model()
 class Expense(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     type = models.CharField(max_length=10, choices=[('personal', 'Personal'), ('group', 'Group')])
+    title=models.CharField(null=True,default='no title')
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='expenses')  # User who created it
 
     group = models.ForeignKey(Group, on_delete=models.CASCADE, null=True, blank=True, related_name='expenses')

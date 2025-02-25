@@ -4,7 +4,7 @@ from .models import Expense, ExpenseSplit
 from .serializers import ExpenseSerializer, ExpenseSplitSerializer
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
@@ -94,7 +94,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         """
         Get all expenses for a given group along with split details.
         """
-        # print(f"🔍 Received group_id: {group_id}")  # Debugging
+        # print(f" Received group_id: {group_id}
 
        
         try:
@@ -147,14 +147,6 @@ class ExpenseSplitViewSet(viewsets.ModelViewSet):
     serializer_class = ExpenseSplitSerializer
 
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from django.utils import timezone
-from datetime import timedelta
-from .models import ExpenseSplit
-from rest_framework import status
-from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -327,7 +319,7 @@ from django.http import JsonResponse
 from django.db.models import Sum
 from django.db.models.functions import TruncMonth, TruncDate, TruncYear
 
-# 1️⃣ Category-wise Expense (Daily)
+# Category-wise Expense (Daily)
 def category_expense_daily_api(request):
     user_id = request.GET.get('user_id')  # Get the user_id from query params
     if not user_id:
@@ -343,7 +335,7 @@ def category_expense_daily_api(request):
     return JsonResponse({"daily_category_expenses": list(expenses)})
 
 
-# 1️⃣ Category-wise Expense (Monthly)
+# 1 Category-wise Expense (Monthly)
 def category_expense_monthly_api(request):
     user_id = request.GET.get('user_id')  # Get the user_id from query params
     if not user_id:
@@ -358,7 +350,7 @@ def category_expense_monthly_api(request):
     )
     return JsonResponse({"monthly_category_expenses": list(expenses)})
 
-# 2️⃣ Category-wise Expense (Yearly)
+# Category-wise Expense (Yearly)
 def category_expense_yearly_api(request):
     user_id = request.GET.get('user_id')  # Get the user_id from query params
     if not user_id:
@@ -404,6 +396,7 @@ class SettleSplitExpenseView(APIView):
                 description=f"Settlement for {split_expense.expense.description}",
                 group=split_expense.expense.group,  # Keep the same group if applicable
                 status="paid",  # Mark as paid since it's settled
+                payment_date = timezone.now(),
                 is_paid_by_user=split_expense.user.id  # Track who paid
             )
 

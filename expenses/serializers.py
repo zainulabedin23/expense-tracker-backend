@@ -8,7 +8,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Expense
-        fields = ['id', 'type', 'owner', 'group', 'amount', 'category', 'description', 'payment_date', 'created_at', 'total_paid', 'status', 'is_paid_by_user']
+        fields = ['id','title', 'type', 'owner', 'group', 'amount', 'category', 'description', 'payment_date', 'created_at', 'total_paid', 'status', 'is_paid_by_user']
 
     def create(self, validated_data):
         request = self.context.get('request')  # Get request context

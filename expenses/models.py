@@ -25,6 +25,8 @@ class Expense(models.Model):
     is_paid_by_user = models.UUIDField(null=True, blank=True)  # Optional, who paid for the group
     def __str__(self):
         return f"{self.owner.username} - {self.amount} ({self.type})"
+    
+    
 class ExpenseSplit(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     expense = models.ForeignKey(Expense, on_delete=models.CASCADE, related_name='splits')  # Linked to Expense

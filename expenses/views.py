@@ -1,30 +1,26 @@
 import uuid
-from rest_framework import viewsets
+from collections import defaultdict
+from datetime import timedelta
+
+from django.contrib.auth import get_user_model
+from django.db.models import Sum
+from django.db.models.functions import TruncMonth, TruncDate, TruncYear
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
 from .models import Expense, ExpenseSplit
 from .serializers import ExpenseSerializer, ExpenseSplitSerializer
-from rest_framework import status
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from django.shortcuts import get_object_or_404
 from group.models import Group, GroupMember
 
-#class ExpenseViewSet(viewsets.ModelViewSet):
-#    queryset = Expense.objects.all()
-#    serializer_class = ExpenseSerializer
+User = get_user_model()
 
-#   def perform_create(self, serializer):
-#        expense = serializer.save()
-#        # You can optionally create corresponding ExpenseSplits after the Expense is saved.
-#       # Assuming you are passing this information in the request body
-#       splits_data = self.request.data.get('splits', [])
-#       for split in splits_data:
-#           ExpenseSplit.objects.create(expense=expense, **split)
-from django.contrib.auth import get_user_model
- 
-User = get_user_model()  # Get the User model dynamically
- 
 class ExpenseViewSet(viewsets.ModelViewSet):
     queryset = Expense.objects.all()
     serializer_class = ExpenseSerializer
@@ -35,34 +31,41 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         Handles both personal and group expenses:
         - If the type is 'group', also create corresponding ExpenseSplit entries.
         """
-        expense = serializer.save(owner=self.request.user)  # Save expense first
-        expense.date = timezone.now()  # Set current date and time
-        self.update_user_totals(expense.owner)
+        # Save expense with current user and time
+        expense = serializer.save(owner=self.request.user)
+        expense.date = timezone.now()
 
+        # Set personal expenses as paid automatically
         if expense.type == 'personal':
-            expense.status = 'paid'  # Set the status of the main expense to 'paid'
-            
+            expense.status = 'paid'
 
         expense.save()
+        self.update_user_totals(expense.owner)
         
-        # If expense type is 'group', create ExpenseSplit records
+        # Handle group expenses by creating splits
         if expense.type == 'group':
-            splits = self.request.data.get("splits", [])
-            for split in splits:
-                user_id = split.get("user")  # Get user UUID
-                amount = split.get("amount")
-                status = split.get("status", "pending")
- 
-                
-                try:
-                    user_instance = User.objects.get(id=user_id)
-                    ExpenseSplit.objects.create(
-                        expense=expense, user=user_instance, amount=amount, status=status
-                    )
-                    self.update_user_totals(user_instance)  # Update totals for each user in the split
-                except User.DoesNotExist:
-                    raise serializer.ValidationError(f"User with ID {user_id} does not exist.")
-                self.update_user_totals(user_instance)  # Update totals for each user in the spli
+            self._create_expense_splits(expense, serializer)
+    
+    def _create_expense_splits(self, expense, serializer):
+        """Helper method to create expense splits for group expenses"""
+        splits = self.request.data.get("splits", [])
+        for split in splits:
+            user_id = split.get("user")
+            amount = split.get("amount")
+            status = split.get("status", "pending")
+            
+            try:
+                user_instance = User.objects.get(id=user_id)
+                ExpenseSplit.objects.create(
+                    expense=expense, 
+                    user=user_instance, 
+                    amount=amount, 
+                    status=status
+                )
+                self.update_user_totals(user_instance)
+            except User.DoesNotExist:
+                raise serializer.ValidationError(f"User with ID {user_id} does not exist.")
+
     def perform_update(self, serializer):
         """
         Updates expense and recalculates totals for affected users.
@@ -70,23 +73,31 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         expense = serializer.save()
         self.update_user_totals(expense.owner)
 
-        # If expense is group, update all split users
+        # Update all split users for group expenses
         if expense.type == 'group':
             for split in expense.splits.all():
                 self.update_user_totals(split.user)
 
     def update_user_totals(self, user):
-    
-        print(f"Updating totals for user {user.id}")
+        """Update the user's expense totals"""
+        # Calculate totals with aggregation
+        expense_filters = {'owner': user}
         
-        total_expense = Expense.objects.filter(owner=user).aggregate(total=Sum("amount"))["total"] or 0
-        total_paid_expense = Expense.objects.filter(owner=user, status="paid").aggregate(total=Sum("amount"))["total"] or 0
-        total_pending_expense = Expense.objects.filter(owner=user, status="pending").aggregate(total=Sum("amount"))["total"] or 0
-        print(total_expense)
-        print(total_paid_expense)
+        total_expense = Expense.objects.filter(**expense_filters).aggregate(
+            total=Sum("amount"))["total"] or 0
+            
+        expense_filters['status'] = 'paid'
+        total_paid = Expense.objects.filter(**expense_filters).aggregate(
+            total=Sum("amount"))["total"] or 0
+            
+        expense_filters['status'] = 'pending'
+        total_pending = Expense.objects.filter(**expense_filters).aggregate(
+            total=Sum("amount"))["total"] or 0
+        
+        # Update user profile with calculated totals
         user.total_expenses = total_expense
-        user.total_paid = total_paid_expense
-        user.total_pending= total_pending_expense
+        user.total_paid = total_paid
+        user.total_pending = total_pending
         user.save()
 
     @action(detail=False, methods=['get'], url_path='group-expenses/(?P<group_id>[^/.]+)')
@@ -94,23 +105,22 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         """
         Get all expenses for a given group along with split details.
         """
-        # print(f" Received group_id: {group_id}
-
-       
         try:
             group_uuid = uuid.UUID(group_id)
         except ValueError:
-            return Response({"error": "Invalid group_id format. Must be a UUID."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Invalid group_id format. Must be a UUID."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-       
         group = get_object_or_404(Group, id=group_uuid)
-        
-
-       
         expenses = Expense.objects.filter(group_id=group_uuid)
         
-
-        
+        response_data = self._format_group_expenses(group, expenses)
+        return Response(response_data)
+    
+    def _format_group_expenses(self, group, expenses):
+        """Helper method to format group expenses for response"""
         response_data = {
             "group_id": str(group.id),
             "expenses": []
@@ -130,58 +140,55 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             ]
 
             response_data["expenses"].append({
-                
                 "expense_id": str(expense.id),
-                "owner":str(expense.owner.username),
+                "owner": str(expense.owner.username),
                 "amount": float(expense.amount),
                 "category": expense.category,
                 "description": expense.description,
                 "payment_date": expense.payment_date,
                 "splits": split_details
             })
+            
+        return response_data
 
-        return Response(response_data)
-    
+
 class ExpenseSplitViewSet(viewsets.ModelViewSet):
     queryset = ExpenseSplit.objects.all()
     serializer_class = ExpenseSplitSerializer
+    permission_classes = [IsAuthenticated]
 
-
-from django.contrib.auth import get_user_model
-
-User = get_user_model()
-
-from datetime import timedelta
-from django.utils import timezone
-from django.shortcuts import get_object_or_404
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.views import APIView
-from .models import ExpenseSplit, Expense
 
 class PendingExpensesView(APIView):
+    permission_classes = [IsAuthenticated]
+    
     def get(self, request, user_id=None):
         """
         Get all pending ExpenseSplits for a specific user.
         If `last_day=true` is passed in query params, it filters for the last 1 day only.
         """
-        last_day = request.GET.get("last_day")  # Check if last_day=true is passed
         user = get_object_or_404(User, id=user_id)
-
+        
+        # Start with base queryset - pending expenses for this user
         pending_expenses = ExpenseSplit.objects.filter(
-            user=user, status="pending"
-        ).select_related("expense", "expense__owner", "expense__group")  # Optimized DB queries
+            user=user, 
+            status="pending"
+        ).select_related("expense", "expense__owner", "expense__group")
 
-
-        # If last_day=true is passed, filter for the last 1 day only
+        # Filter by date if requested
+        last_day = request.GET.get("last_day")
         if last_day == "true":
             one_day_ago = timezone.now() - timedelta(days=1)
             pending_expenses = pending_expenses.filter(created_at__gte=one_day_ago)
 
-        # Dictionary to group expenses by group name
+        # Group expenses by group name
+        grouped_expenses = self._group_expenses_by_group(pending_expenses)
+        return Response(grouped_expenses, status=status.HTTP_200_OK)
+    
+    def _group_expenses_by_group(self, expenses):
+        """Helper method to group expenses by group name"""
         grouped_expenses = defaultdict(list)
 
-        for expense in pending_expenses:
+        for expense in expenses:
             group_name = expense.expense.group.name if expense.expense.group else "No Group"
             grouped_expenses[group_name].append({
                 "split_expense_id": expense.id,
@@ -190,10 +197,9 @@ class PendingExpensesView(APIView):
                 "amount": expense.amount,
                 "status": expense.status,
             })
+            
+        return grouped_expenses
 
-        return Response(grouped_expenses, status=status.HTTP_200_OK)
-from group.models import Group
-from .serializers import ExpenseSerializer
 
 class UserExpensesViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
@@ -205,69 +211,71 @@ class UserExpensesViewSet(viewsets.ViewSet):
         user = get_object_or_404(User, id=user_id)
         expenses = Expense.objects.filter(owner=user).select_related('group')
 
-        # Convert data to include group name
         serialized_expenses = []
         for expense in expenses:
             expense_data = ExpenseSerializer(expense).data
-            # Fetch group name if group exists
+            # Replace group ID with group name
             expense_data['group_name'] = expense.group.name if expense.group else "No Group"
-            del expense_data['group']  # Remove group ID if not needed
+            del expense_data['group']  # Remove group ID
             serialized_expenses.append(expense_data)
 
         return Response(serialized_expenses)
 
 
-
-    
-    
-from collections import defaultdict
-# import networkx as nx
-
-
-
-
-
-
 class SimplifyDebtView(APIView):
     permission_classes = [IsAuthenticated]
+    
     def get(self, request, group_id):
-        # Validate group_id
+        """
+        Get simplified debts for a group to minimize the number of transactions.
+        """
         try:
             group_uuid = uuid.UUID(str(group_id))
         except ValueError:
-            return Response({"error": "Invalid group_id format. Must be a UUID."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Invalid group_id format. Must be a UUID."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # Fetch the group
         group = get_object_or_404(Group, id=group_uuid)
+        
+        # Collect transactions from all expenses in the group
+        transactions = self._collect_group_transactions(group_uuid)
+        
+        # Simplify the debt transactions
+        simplified_transactions = self._simplify_debts(transactions)
 
-        # Fetch expenses related to the group
+        return Response({
+            "group_id": group_id, 
+            "simplified_debts": simplified_transactions
+        })
+    
+    def _collect_group_transactions(self, group_uuid):
+        """Helper method to collect all transactions in a group"""
+        transactions = []
         expenses = Expense.objects.filter(group_id=group_uuid)
 
-        # Step 1: Collect transactions (lender -> borrower -> amount)
-        transactions = []
-
         for expense in expenses:
-            lender_id = str(expense.owner.id)  # The owner is the lender
+            lender_id = str(expense.owner.id)
             splits = ExpenseSplit.objects.filter(expense=expense).select_related("user")
 
             for split in splits:
-                if split.status.lower()=='paid':
+                if split.status.lower() == 'paid':
                     continue
-                borrower_id = str(split.user.id)  # The user in split is the borrower
-                amount = float(split.amount)  # The amount borrowed
+                    
+                borrower_id = str(split.user.id)
+                amount = float(split.amount)
 
-                if lender_id != borrower_id:  # Ignore if lender is paying themselves
+                # Only add if lender and borrower are different people
+                if lender_id != borrower_id:
                     transactions.append((borrower_id, lender_id, amount))
-        # print(transactions)
-        # Step 2: Simplify the transactions
-        simplified_transactions = self.simplify_debts(transactions)
-
-        return Response({"group_id": group_id, "simplified_debts": simplified_transactions})
-
- 
-   
+                    
+        return transactions
     
-    def simplify_debts(self, transactions):
+    def _simplify_debts(self, transactions):
+        """
+        Simplify debts to minimize the number of transactions needed.
+        """
         balance = defaultdict(float)
 
         # Calculate net balance for each user
@@ -275,11 +283,13 @@ class SimplifyDebtView(APIView):
             balance[borrower] -= amount
             balance[lender] += amount
 
-        # Separate creditors (positive balance) and debtors (negative balance)
-        creditors = sorted([(user, amount) for user, amount in balance.items() if amount > 0], key=lambda x: x[1])
-        debtors = sorted([(user, -amount) for user, amount in balance.items() if amount < 0], key=lambda x: x[1])
+        # Separate creditors and debtors
+        creditors = sorted([(user, amount) for user, amount in balance.items() 
+                           if amount > 0], key=lambda x: x[1])
+        debtors = sorted([(user, -amount) for user, amount in balance.items() 
+                         if amount < 0], key=lambda x: x[1])
 
-        # Step 3: Match debtors to creditors
+        # Match debtors to creditors
         simplified_transactions = []
         i, j = 0, 0
 
@@ -288,12 +298,17 @@ class SimplifyDebtView(APIView):
             creditor, credit_amount = creditors[j]
 
             amount = min(debt_amount, credit_amount)
-            simplified_transactions.append({"debtor": debtor, "creditor": creditor, "amount": amount})
+            simplified_transactions.append({
+                "debtor": debtor, 
+                "creditor": creditor, 
+                "amount": amount
+            })
 
             # Update remaining balances
             debtors[i] = (debtor, debt_amount - amount)
             creditors[j] = (creditor, credit_amount - amount)
 
+            # Move to next person if their balance is zero
             if debtors[i][1] == 0:
                 i += 1
             if creditors[j][1] == 0:
@@ -302,94 +317,97 @@ class SimplifyDebtView(APIView):
         return simplified_transactions
 
 
-from django.http import JsonResponse
-from django.db.models import Sum
-from django.db.models.functions import TruncMonth, TruncDate, TruncYear
+class ExpenseAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, period=None):
+        """
+        Get category-wise expense analytics for a user.
+        Period can be 'daily', 'monthly', or 'yearly'.
+        """
+        user_id = request.GET.get('user_id')
+        if not user_id:
+            return Response({"error": "user_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        period = period or request.GET.get('period', 'monthly')
+        
+        if period == 'daily':
+            return self._get_daily_expenses(user_id)
+        elif period == 'monthly':
+            return self._get_monthly_expenses(user_id)
+        elif period == 'yearly':
+            return self._get_yearly_expenses(user_id)
+        else:
+            return Response(
+                {"error": "Invalid period. Choose 'daily', 'monthly', or 'yearly'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    def _get_daily_expenses(self, user_id):
+        """Get daily expense analytics by category"""
+        expenses = (
+            Expense.objects.filter(owner=user_id)
+            .annotate(date=TruncDate("payment_date"))
+            .values("date", "category")
+            .annotate(total_spent=Sum("amount"))
+            .order_by("date")
+        )
+        return Response({"daily_category_expenses": list(expenses)})
+    
+    def _get_monthly_expenses(self, user_id):
+        """Get monthly expense analytics by category"""
+        expenses = (
+            Expense.objects.filter(owner=user_id)
+            .annotate(month=TruncMonth("payment_date"))
+            .values("month", "category")
+            .annotate(total_spent=Sum("amount"))
+            .order_by("month")
+        )
+        return Response({"monthly_category_expenses": list(expenses)})
+    
+    def _get_yearly_expenses(self, user_id):
+        """Get yearly expense analytics by category"""
+        expenses = (
+            Expense.objects.filter(owner=user_id)
+            .annotate(year=TruncYear("payment_date"))
+            .values("year", "category")
+            .annotate(total_spent=Sum("amount"))
+            .order_by("year")
+        )
+        return Response({"yearly_category_expenses": list(expenses)})
 
-# Category-wise Expense (Daily)
-def category_expense_daily_api(request):
-    user_id = request.GET.get('user_id')  # Get the user_id from query params
-    if not user_id:
-        return JsonResponse({"error": "user_id is required"}, status=400)
-
-    expenses = (
-        Expense.objects.filter(owner=user_id)
-        .annotate(date=TruncDate("payment_date"))  # Grouping by daily payment_date
-        .values("date", "category")
-        .annotate(total_spent=Sum("amount"))
-        .order_by("date")
-    )
-    return JsonResponse({"daily_category_expenses": list(expenses)})
-
-
-# 1 Category-wise Expense (Monthly)
-def category_expense_monthly_api(request):
-    user_id = request.GET.get('user_id')  # Get the user_id from query params
-    if not user_id:
-        return JsonResponse({"error": "user_id is required"}, status=400)
-
-    expenses = (
-        Expense.objects.filter(owner=user_id)
-        .annotate(month=TruncMonth("payment_date"))  # Truncate to month
-        .values("month", "category")  # Only select month and category
-        .annotate(total_spent=Sum("amount"))
-        .order_by("month")
-    )
-    return JsonResponse({"monthly_category_expenses": list(expenses)})
-
-# Category-wise Expense (Yearly)
-def category_expense_yearly_api(request):
-    user_id = request.GET.get('user_id')  # Get the user_id from query params
-    if not user_id:
-        return JsonResponse({"error": "user_id is required"}, status=400)
-
-    expenses = (
-        Expense.objects.filter(owner=user_id)
-        .annotate(year=TruncYear("payment_date"))  # Truncate to year
-        .values("year", "category")  # Only select year and category
-        .annotate(total_spent=Sum("amount"))
-        .order_by("year")
-    )
-    return JsonResponse({"yearly_category_expenses": list(expenses)})
 
 class SettleSplitExpenseView(APIView):
+    permission_classes = [IsAuthenticated]
+    
     def post(self, request):
         """
         Settles a split expense by updating its status to 'paid' 
         and creating a new personal expense under 'Settlement' category.
         """
-        split_expense_id = request.data.get("split_expense_id")  # Get split expense ID from request
+        split_expense_id = request.data.get("split_expense_id")
         if not split_expense_id:
-            return Response({"error": "split_expense_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "split_expense_id is required"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # Fetch the split expense
         split_expense = get_object_or_404(ExpenseSplit, id=split_expense_id)
 
         if split_expense.status == "paid":
-            return Response({"message": "This expense is already settled"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"message": "This expense is already settled"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Mark split expense as paid
         split_expense.status = "paid"
         split_expense.save()
 
         try:
-            # Create a new expense entry
-            new_expense = Expense.objects.create(
-                id=uuid.uuid4(),  # Generate a new unique ID
-                type="personal",  # This is a personal expense
-                owner=split_expense.user,  # The user who settled the split
-                amount=split_expense.amount,  
-                category="Settlement",  # Mark it as a settlement
-                description=f"Settlement for {split_expense.expense.description}",
-                group=split_expense.expense.group,  # Keep the same group if applicable
-                status="paid",  # Mark as paid since it's settled
-                payment_date = timezone.now(),
-                is_paid_by_user=split_expense.user.id  # Track who paid
-            )
-
-
-           
-
+            # Create a settlement expense record
+            new_expense = self._create_settlement_expense(split_expense)
+            
             return Response(
                 {
                     "message": "Split expense settled successfully",
@@ -401,5 +419,22 @@ class SettleSplitExpenseView(APIView):
                 status=status.HTTP_200_OK
             )
         except Exception as e:
-            
-            return Response({"error": "Failed to create new expense"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"error": "Failed to create settlement expense"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def _create_settlement_expense(self, split_expense):
+        """Helper method to create a settlement expense record"""
+        return Expense.objects.create(
+            id=uuid.uuid4(),
+            type="personal",
+            owner=split_expense.user,
+            amount=split_expense.amount,
+            category="Settlement",
+            description=f"Settlement for {split_expense.expense.description}",
+            group=split_expense.expense.group,
+            status="paid",
+            payment_date=timezone.now(),
+            is_paid_by_user=split_expense.user.id
+        )
